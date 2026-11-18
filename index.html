@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#110d24" />
+    <title>Sightline</title>
+    <meta name="description" content="Show your screen with a link. Peer to peer, in the browser, with sound." />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- The link preview chat apps unfurl (Discord, Slack, WhatsApp). Static: no server knows who's sharing. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Sightline" />
+    <meta property="og:title" content="Someone's sharing their screen" />
+    <meta property="og:description" content="Open the link to watch, live, right in your browser." />
+    <meta property="og:image" content="%VITE_SITE_URL%/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

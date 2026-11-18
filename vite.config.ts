@@ -1,0 +1,40 @@
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Plugin } from "vite";
+
+// The link's secret lives in the page, so the built page runs only its own code. Scripts come
+// from the site alone; the network is the signaling relays (wss:). Dev skips it: Vite injects
+// inline scripts there.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "font-src 'self'",
+  "connect-src 'self' wss:",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "object-src 'none'",
+].join("; ");
+
+const csp: Plugin = {
+  name: "csp",
+  apply: "build",
+  transformIndexHtml: () => [
+    {
+      tag: "meta",
+      attrs: { "http-equiv": "Content-Security-Policy", content: CSP },
+      injectTo: "head-prepend",
+    },
+  ],
+};
+
+export default defineConfig({
+  // Relative asset paths, so the same build works at a domain root (Cloudflare Pages) and
+  // under a subpath (GitHub Pages' /sightline/).
+  base: "./",
+  plugins: [react(), tailwindcss(), csp],
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+});
