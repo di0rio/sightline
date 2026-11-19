@@ -8,105 +8,136 @@ import {
   VolumeXIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { Dusk } from "@/components/dusk";
+import { LinkMeter, Sweep } from "@/components/link";
 import { NetworkSettings } from "@/components/network-settings";
+import { getProfile, ProfileDialog, useProfile } from "@/components/profile";
 import { Page } from "@/components/shell";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Slider } from "@/components/ui/slider";
-import { Spinner } from "@/components/ui/spinner";
+import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Invite } from "@/lib/link";
 import { enter, OFF_AIR, type Session, type Show } from "@/lib/room";
 import { settings } from "@/lib/settings";
-import { formatRate, readStats, type Stats } from "@/lib/stats";
+import { formatRate, ROUTE_NAMES, readStats, type Stats } from "@/lib/stats";
 
-type Phase = "ready" | "joining" | "live" | "ended" | "removed";
+type Phase = "joining" | "live" | "reconnecting" | "ended" | "removed";
 
+/** How long a dropped host gets to come back before it's over: Deskline's minute. */
+const GRACE_MS = 60_000;
+
+// Opening the link is the click: it starts connecting straight away, and the viewer is already
+// someone (a random name and critter they can change at any time), so there's nothing to fill in.
 export function Viewer({ invite }: { invite: Invite }) {
-  const [phase, setPhase] = useState<Phase>("ready");
-  const [name, setName] = useState(settings.name);
+  const [phase, setPhase] = useState<Phase>("joining");
+  const [session, setSession] = useState<Session | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [show, setShow] = useState<Show>(OFF_AIR);
   const [blocked, setBlocked] = useState(false);
   const [slow, setSlow] = useState(false);
-  const session = useRef<Session | null>(null);
+  const profile = useProfile();
 
-  const joining = phase === "joining" || phase === "live";
+  const active = phase !== "ended" && phase !== "removed";
   useEffect(() => {
-    if (!joining) return;
+    if (!active) return;
     let gone = false;
     let current: Session | null = null;
+    let live = false; // the host's last word on whether it's still sharing
+    let lost = 0;
     const offs: (() => void)[] = [];
     const slowTimer = setTimeout(() => setSlow(true), 20_000);
 
-    enter(invite.secret, invite.hostId).then(
-      (s) => {
-        if (gone) return void s.room.leave();
-        current = s;
-        session.current = s;
-        void s.names.set(name.trim());
-        offs.push(
-          // only the host's stream; the host's id came with the link and Trystero verifies it
-          s.room.onPeerStream(
-            (incoming, { userId }) => {
-              if (userId !== invite.hostId) return;
-              setStream(incoming);
-              setPhase("live");
-            },
-            { replay: true },
-          ),
-          s.show.onChange(
-            (value) => {
-              if (!s.show.getMeta()) return; // the default, before the host's state arrives
-              setShow(value);
-              if (!value.live) setPhase("ended");
-            },
-            { replay: true },
-          ),
-          s.room.onUserLeave(({ userId }) => userId === invite.hostId && setPhase("ended")),
-          s.room.onError((error) => {
-            if (error.code === "banned") setPhase("removed");
-            if (error.code === "peer-connect-failed") setBlocked(true);
-          }),
-        );
-      },
-      () => setBlocked(true),
-    );
-
+    // a tick late, so a mount that's undone at once (React's dev double mount) never joins:
+    // Trystero allows one join per room at a time
+    const joinTimer = setTimeout(join);
     return () => {
       gone = true;
+      clearTimeout(joinTimer);
       clearTimeout(slowTimer);
+      clearTimeout(lost);
       for (const off of offs) off();
       void current?.room.leave();
-      session.current = null;
+      setSession(null);
     };
-  }, [joining, invite, name]);
+
+    function join() {
+      enter(invite.secret, invite.hostId).then(
+        (s) => {
+          if (gone) return void s.room.leave();
+          current = s;
+          setSession(s);
+          offs.push(
+            // only the host's stream; the host's id came with the link and Trystero verifies it
+            s.room.onPeerStream(
+              (incoming, { userId }) => {
+                if (userId !== invite.hostId) return;
+                clearTimeout(lost);
+                setStream(incoming);
+                setPhase("live");
+              },
+              { replay: true },
+            ),
+            s.show.onChange(
+              (value) => {
+                if (!s.show.getMeta()) return; // the default, before the host's state arrives
+                live = value.live;
+                setShow(value);
+                if (!value.live) setPhase("ended");
+              },
+              { replay: true },
+            ),
+            s.room.onUserLeave(({ userId }) => {
+              if (userId !== invite.hostId) return;
+              if (!live) return setPhase("ended");
+              // gone without saying it stopped: a dropped link, so keep the picture and wait
+              clearTimeout(lost);
+              setPhase("reconnecting");
+              lost = window.setTimeout(() => setPhase("ended"), GRACE_MS);
+            }),
+            s.room.onError((error) => {
+              if (error.code === "banned") setPhase("removed");
+              if (error.code === "peer-connect-failed") setBlocked(true);
+            }),
+          );
+        },
+        () => setBlocked(true),
+      );
+    }
+  }, [active, invite]);
+
+  // who you are goes to the room on joining, and again whenever you change it
+  useEffect(() => void session?.profiles.set(profile).catch(() => {}), [session, profile]);
 
   // stop listening once it's over, so the room closes and the camera-style indicators go away
   useEffect(() => {
-    if (phase === "ended" || phase === "removed") setStream(null);
-  }, [phase]);
+    if (!active) setStream(null);
+  }, [active]);
 
-  if (phase === "live" && stream)
-    return <Stage stream={stream} show={show} session={session} hostId={invite.hostId} />;
+  if ((phase === "live" || phase === "reconnecting") && stream && session)
+    return (
+      <Stage
+        stream={stream}
+        show={show}
+        session={session}
+        hostId={invite.hostId}
+        reconnecting={phase === "reconnecting"}
+      />
+    );
 
   return (
     <Page>
       <Dusk className="art-edge grid aspect-video w-full place-items-center rounded-[14px]">
         {phase === "joining" && (
-          <div className="relative flex items-center gap-2.5 rounded-full bg-black/60 px-3.5 py-2 text-white backdrop-blur">
-            <Spinner aria-hidden="true" />
-            Connecting to the host…
+          <div className="relative flex items-center gap-3 rounded-full bg-black/60 py-2 ps-3 pe-4 text-white backdrop-blur">
+            <Sweep />
+            {show.name ? `Connecting to ${show.name}…` : "Connecting…"}
           </div>
         )}
       </Dusk>
       <div role="status" className="mt-8 text-pretty text-foreground/70 leading-relaxed">
-        {phase === "ready" && (
-          <p>Someone sent you their screen. Press Watch to see it here, with sound.</p>
-        )}
         {phase === "joining" && !blocked && (
           <p>
             {slow
@@ -125,37 +156,6 @@ export function Viewer({ invite }: { invite: Invite }) {
         )}
         {phase === "removed" && <p>The host removed you from this share.</p>}
       </div>
-
-      {phase === "ready" && (
-        <form
-          className="mt-8 flex flex-col gap-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            settings.setName(name);
-            setPhase("joining");
-          }}
-        >
-          <Field>
-            <FieldLabel>Your name</FieldLabel>
-            <Input
-              name="name"
-              autoComplete="given-name"
-              placeholder="Luan"
-              maxLength={40}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="max-w-xs"
-            />
-            <FieldDescription>So they know who's watching.</FieldDescription>
-          </Field>
-          <div>
-            <Button type="submit" size="lg">
-              <PlayIcon aria-hidden="true" />
-              Watch
-            </Button>
-          </div>
-        </form>
-      )}
       {phase === "joining" && blocked && (
         <div className="mt-6">
           <NetworkSettings trigger="Set a relay server" variant="outline" />
@@ -165,27 +165,36 @@ export function Viewer({ invite }: { invite: Invite }) {
   );
 }
 
+// once per page: the stage can come and go with reconnects, the greeting shouldn't
+let greeted = false;
+
 /** The live screen, edge to edge, with controls that get out of the way. */
 function Stage({
   stream,
   show,
   session,
   hostId,
+  reconnecting,
 }: {
   stream: MediaStream;
   show: Show;
-  session: React.RefObject<Session | null>;
+  session: Session;
   hostId: string;
+  reconnecting: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
+  // the browser wouldn't play sound before a click on the page: playing muted until there is one
+  const [soundLocked, setSoundLocked] = useState(false);
   const [volume, setVolume] = useState(settings.volume);
   const [blockedPlay, setBlockedPlay] = useState(false);
   const [full, setFull] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [awake, setAwake] = useState(true);
   const sleepTimer = useRef(0);
+  const stats = useHostStats(session, hostId);
 
   // the host can change source or add sound: re-attach so the element picks up new tracks
   useEffect(() => {
@@ -195,7 +204,16 @@ function Stage({
       el.srcObject = stream;
       el.play().then(
         () => setBlockedPlay(false),
-        () => setBlockedPlay(true),
+        () => {
+          // no click on this page yet: browsers allow muted video, so start with the picture
+          el.muted = true;
+          setMuted(true);
+          setSoundLocked(true);
+          el.play().then(
+            () => setBlockedPlay(false),
+            () => setBlockedPlay(true),
+          );
+        },
       );
     };
     attach();
@@ -212,6 +230,31 @@ function Stage({
     video.current.muted = muted;
     video.current.volume = volume;
   }, [muted, volume]);
+
+  // any click or key on the page is the gesture the browser wanted: the sound comes on with it
+  useEffect(() => {
+    if (!soundLocked) return;
+    const unlock = () => {
+      setSoundLocked(false);
+      setMuted(false);
+    };
+    addEventListener("pointerdown", unlock, { once: true });
+    addEventListener("keydown", unlock, { once: true });
+    return () => {
+      removeEventListener("pointerdown", unlock);
+      removeEventListener("keydown", unlock);
+    };
+  }, [soundLocked]);
+
+  useEffect(() => {
+    if (greeted) return;
+    greeted = true;
+    toastManager.add({
+      title: `You're watching as ${getProfile().name}`,
+      description: "Everyone here sees this name and critter.",
+      actionProps: { children: "Change", onClick: () => setEditing(true) },
+    });
+  }, []);
 
   useEffect(() => {
     const sync = () => setFull(!!document.fullscreenElement);
@@ -246,7 +289,7 @@ function Stage({
         e.metaKey ||
         e.ctrlKey ||
         e.altKey ||
-        (e.target as HTMLElement).closest("input, [role=slider]")
+        (e.target as HTMLElement).closest("input, [role=slider], [role=dialog]")
       )
         return;
       const key = e.key.toLowerCase();
@@ -266,6 +309,7 @@ function Stage({
 
   const title = show.name ? `${show.name}'s screen` : "Shared screen";
   const canPip = typeof document !== "undefined" && document.pictureInPictureEnabled;
+  const hasSound = stream.getAudioTracks().length > 0;
 
   return (
     <div
@@ -285,6 +329,18 @@ function Stage({
         aria-label={title}
       />
 
+      {reconnecting && (
+        <div className="absolute inset-0 grid place-items-center bg-black/40">
+          <div
+            role="status"
+            className="flex items-center gap-3 rounded-[10px] bg-black/80 px-4 py-3 text-white"
+          >
+            <Sweep />
+            {show.name ? `Lost ${show.name}. Reconnecting…` : "Reconnecting…"}
+          </div>
+        </div>
+      )}
+
       {blockedPlay && (
         <div className="absolute inset-0 grid place-items-center bg-black/60">
           <Button size="lg" onClick={() => video.current?.play().then(() => setBlockedPlay(false))}>
@@ -294,16 +350,29 @@ function Stage({
         </div>
       )}
 
+      {soundLocked && hasSound && !blockedPlay && (
+        <div className="absolute inset-x-0 bottom-24 flex justify-center px-4">
+          <Button size="lg" className="shadow-lg">
+            <Volume2Icon aria-hidden="true" />
+            Turn on sound
+          </Button>
+        </div>
+      )}
+
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 bg-linear-to-b from-black/70 to-transparent px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-10 text-white transition-opacity duration-300 data-[asleep]:opacity-0"
+        className="group pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 bg-linear-to-b from-black/70 to-transparent px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-10 text-white transition-opacity duration-300 data-[asleep]:opacity-0"
         data-asleep={!awake || undefined}
       >
-        <p className="flex min-w-0 items-center gap-2">
-          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-red-500" />
+        <p className="flex min-w-0 items-center gap-2.5">
+          <Avatar seed={show.avatar} />
           <span className="truncate font-medium">{title}</span>
-          <span className="shrink-0 text-white/60">Live</span>
+          <span className="shrink-0 text-white/60">{reconnecting ? "Reconnecting" : "Live"}</span>
+          <LinkMeter stats={reconnecting ? null : stats} className="max-sm:hidden" />
         </p>
-        {showStats && <StatsPanel session={session} hostId={hostId} />}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <Audience session={session} hostId={hostId} onEdit={() => setEditing(true)} />
+          {showStats && <StatsPanel stats={stats} />}
+        </div>
       </div>
 
       <div
@@ -356,6 +425,77 @@ function Stage({
           {full ? <MinimizeIcon aria-hidden="true" /> : <MaximizeIcon aria-hidden="true" />}
         </Control>
       </div>
+
+      <ProfileDialog open={editing} onOpenChange={setEditing} container={stage.current} />
+    </div>
+  );
+}
+
+const CROWD = 4;
+
+/** Who's here: you first (a click to change your name and critter), then everyone else. */
+function Audience({
+  session,
+  hostId,
+  onEdit,
+}: {
+  session: Session;
+  hostId: string;
+  onEdit: () => void;
+}) {
+  const me = useProfile();
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const update = () => rerender((n) => n + 1);
+    const offs = [
+      session.profiles.onChange(update),
+      session.room.onUserJoin(update),
+      session.room.onUserLeave(update),
+    ];
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [session]);
+
+  const others = Object.keys(session.room.getUsers())
+    .filter((id) => id !== hostId)
+    .map((id) => {
+      const p = session.profiles.has(id) ? session.profiles.get(id) : null;
+      return { id, name: p?.name || "Someone", avatar: p?.avatar ?? 0 };
+    });
+
+  return (
+    <div
+      data-controls
+      className="pointer-events-auto flex items-center gap-1.5 group-data-[asleep]:pointer-events-none"
+    >
+      {others.length > 0 && <span className="sr-only">Also watching:</span>}
+      {others.slice(0, CROWD).map((o) => (
+        <Tooltip key={o.id}>
+          <TooltipTrigger render={<span className="rounded-[8px]" />}>
+            <Avatar seed={o.avatar} label={o.name} />
+          </TooltipTrigger>
+          <TooltipPopup>{o.name}</TooltipPopup>
+        </Tooltip>
+      ))}
+      {others.length > CROWD && (
+        <span className="px-1 text-sm text-white/70 tabular-nums">+{others.length - CROWD}</span>
+      )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label={`You, ${me.name}. Change your name and critter`}
+              onClick={onEdit}
+              className="cursor-pointer rounded-[8px] outline-offset-2 outline-white ring-2 ring-white/70 ring-offset-2 ring-offset-black/60 transition-shadow duration-150 hover:ring-white focus-visible:outline-2"
+            />
+          }
+        >
+          <Avatar seed={me.avatar} />
+        </TooltipTrigger>
+        <TooltipPopup>You · {me.name}</TooltipPopup>
+      </Tooltip>
     </div>
   );
 }
@@ -394,19 +534,13 @@ function Control({
   );
 }
 
-function StatsPanel({
-  session,
-  hostId,
-}: {
-  session: React.RefObject<Session | null>;
-  hostId: string;
-}) {
+/** The host's connection, read once a second: it drives the link meter and the stats panel. */
+function useHostStats(session: Session, hostId: string) {
   const [stats, setStats] = useState<Stats | null>(null);
-
   useEffect(() => {
     let sample: { bytes: number; at: number } | undefined;
     const tick = async () => {
-      const peer = Object.values(session.current?.room.getPeers() ?? {}).find(
+      const peer = Object.values(session.room.getPeers()).find(
         (p) => p.userId === hostId && p.connection,
       );
       if (!peer?.connection) return;
@@ -419,9 +553,12 @@ function StatsPanel({
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [session, hostId]);
+  return stats;
+}
 
+function StatsPanel({ stats }: { stats: Stats | null }) {
   return (
-    <dl className="grid shrink-0 grid-cols-[auto_auto] gap-x-4 gap-y-0.5 rounded-[10px] bg-black/60 px-3 py-2 font-mono text-sm tabular-nums backdrop-blur">
+    <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 rounded-[10px] bg-black/60 px-3 py-2 font-mono text-sm tabular-nums backdrop-blur">
       {stats ? (
         <>
           <dt className="text-white/60">Picture</dt>
@@ -434,7 +571,7 @@ function StatsPanel({
           </dd>
           <dt className="text-white/60">Route</dt>
           <dd>
-            {stats.relayed ? "Relay" : "Direct"}
+            {ROUTE_NAMES[stats.route]}
             {stats.rttMs !== null && ` · ${stats.rttMs} ms`}
           </dd>
         </>

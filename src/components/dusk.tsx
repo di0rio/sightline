@@ -1,21 +1,15 @@
 import { useEffect, useRef } from "react";
+import { DUSK, dither, NIGHT } from "@/lib/palette";
 import { cn } from "@/lib/utils";
 
 // The dusk from luannzin.com's dither strip, as a sky: dots on a grid, night at the top dithering
 // down through violet, plum and ember to a gold glow on the horizon, in a 4x4 Bayer order. The
 // pointer pushes dots aside and they spring back. It's art: the only colour in the interface.
-const NIGHT = "#110d24";
-const RAMP = [NIGHT, "#3a2a6b", "#7a3361", "#e0703f", "#ffd180"];
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const RAMP = [NIGHT, ...DUSK];
 const STEP = 4; // px between dots
 const DOT = 3;
 const REACH = 40; // px the pointer pushes within
 const PUSH = 14;
-
-function shade(t: number, col: number, row: number) {
-  const step = t * (RAMP.length - 1) + BAYER[(row % 4) * 4 + (col % 4)] / 16 - 0.5;
-  return Math.max(0, Math.min(RAMP.length - 1, Math.round(step)));
-}
 
 export function Dusk({ className, children }: { className?: string; children?: React.ReactNode }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -54,7 +48,7 @@ export function Dusk({ className, children }: { className?: string; children?: R
           const y = r * STEP;
           const near = Math.max(0, 1 - Math.hypot(x - gx, (y - gy) * 1.7) / reach);
           const t = Math.max(near ** 1.5, 0.06 + 0.22 * (y / height) ** 2);
-          const i = shade(t, c, r);
+          const i = dither(RAMP.length, t, c, r);
           if (i > 0) lists[i].push(x, y, 0, 0);
         }
       }
