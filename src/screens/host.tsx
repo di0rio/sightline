@@ -7,7 +7,10 @@ import {
   UserXIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { Dusk } from "@/components/dusk";
+import { LinkMeter } from "@/components/link";
+import { getProfile, useProfile } from "@/components/profile";
 import { Page } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -23,9 +26,8 @@ import { toastManager } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { canShare, type SoundSupport, soundSupport } from "@/lib/capture";
 import { detectHardware } from "@/lib/peer";
-import { settings } from "@/lib/settings";
 import { Share, type Watcher } from "@/lib/share";
-import { formatRate, readStats, type Stats } from "@/lib/stats";
+import { formatRate, ROUTE_NAMES, readStats, type Stats } from "@/lib/stats";
 import type { Mode } from "@/lib/tuning";
 
 const README_LINUX = "https://github.com/luannzin/sightline#sound-on-linux";
@@ -33,27 +35,31 @@ const README_LINUX = "https://github.com/luannzin/sightline#sound-on-linux";
 export function Host() {
   const [share, setShare] = useState<Share | null>(null);
   const [starting, setStarting] = useState(false);
-  const [name, setName] = useState(settings.name);
   const [mode, setMode] = useState<Mode>("sharp");
   const [, rerender] = useState(0);
   const support = useRef<SoundSupport>(soundSupport()).current;
 
   useEffect(() => void detectHardware(), []);
 
-  // Closing or reloading the tab ends the share for everyone: ask first.
+  // Closing or reloading the tab ends the share for everyone: ask first, and if they go anyway,
+  // tell the viewers it's over rather than leave them waiting for a reconnect.
   useEffect(() => {
     if (!share) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const end = () => void share.stop();
     addEventListener("beforeunload", warn);
-    return () => removeEventListener("beforeunload", warn);
+    addEventListener("pagehide", end);
+    return () => {
+      removeEventListener("beforeunload", warn);
+      removeEventListener("pagehide", end);
+    };
   }, [share]);
 
   const start = async () => {
     setStarting(true);
-    settings.setName(name);
     try {
       const next = await Share.start(
-        name.trim(),
+        getProfile(),
         mode,
         () => rerender((n) => n + 1),
         () => {
@@ -107,34 +113,13 @@ export function Host() {
         video going straight from your computer to theirs. No account, no app, nothing to install.
       </p>
       {canShare ? (
-        <form
-          className="mt-8 flex flex-col gap-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void start();
-          }}
-        >
-          <Field>
-            <FieldLabel>Your name</FieldLabel>
-            <Input
-              name="name"
-              autoComplete="given-name"
-              placeholder="Luan"
-              maxLength={40}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="max-w-xs"
-            />
-            <FieldDescription>Shown to the people watching.</FieldDescription>
-          </Field>
-          <div className="flex flex-col items-start gap-3">
-            <Button type="submit" size="lg" loading={starting}>
-              <MonitorUpIcon aria-hidden="true" />
-              Share your screen
-            </Button>
-            <SoundNote support={support} />
-          </div>
-        </form>
+        <div className="mt-8 flex flex-col items-start gap-3">
+          <Button size="lg" loading={starting} onClick={() => void start()}>
+            <MonitorUpIcon aria-hidden="true" />
+            Share your screen
+          </Button>
+          <SoundNote support={support} />
+        </div>
       ) : (
         <p className="mt-8 text-muted-foreground">
           Sharing needs a computer. Phones and tablets can still watch a link someone sends.
@@ -177,10 +162,24 @@ function Live({
 }) {
   const preview = useRef<HTMLVideoElement>(null);
   const watchers = share.watchers();
+  const profile = useProfile();
 
   useEffect(() => {
     if (preview.current) preview.current.srcObject = share.out;
   }, [share]);
+
+  // a new name or critter goes out to everyone watching as soon as it's saved
+  useEffect(() => void share.setProfile(profile).catch(() => {}), [share, profile]);
+
+  // say who came in, once their name arrives, so there's no need to watch the list
+  const announced = useRef(new Set<string>());
+  useEffect(() => {
+    for (const w of watchers) {
+      if (!w.profile || announced.current.has(w.userId)) continue;
+      announced.current.add(w.userId);
+      toastManager.add({ title: `${w.profile.name || "Someone"} is watching` });
+    }
+  });
 
   return (
     <Page>
@@ -391,14 +390,18 @@ function Watching({ share, watchers }: { share: Share; watchers: Watcher[] }) {
         <ul className="flex flex-col gap-1">
           {watchers.map((w) => {
             const s = stats[w.userId];
-            const label = w.name || "Someone";
+            const label = w.profile?.name || "Someone";
             return (
               <li key={w.userId} className="flex min-h-11 items-center justify-between gap-4">
-                <div className="min-w-0 leading-snug">
-                  <p className="truncate">{label}</p>
-                  <p className="text-muted-foreground text-sm tabular-nums">
-                    {s ? describe(s) : "Connecting…"}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar seed={w.profile?.avatar ?? 0} />
+                  <div className="min-w-0 leading-snug">
+                    <p className="truncate">{label}</p>
+                    <p className="flex items-center gap-2 text-muted-foreground text-sm tabular-nums">
+                      <LinkMeter stats={s ?? null} />
+                      <span className="truncate">{s ? describe(s) : "Connecting…"}</span>
+                    </p>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
@@ -419,8 +422,7 @@ function Watching({ share, watchers }: { share: Share; watchers: Watcher[] }) {
 }
 
 function describe(s: Stats) {
-  const route = s.relayed ? "Through relay" : "Direct";
-  const parts = [route, formatRate(s.kbps)];
+  const parts = [ROUTE_NAMES[s.route], formatRate(s.kbps)];
   if (s.rttMs !== null) parts.push(`${s.rttMs} ms`);
   if (s.limit === "cpu") parts.push("held back by your CPU");
   if (s.limit === "bandwidth") parts.push("held back by bandwidth");

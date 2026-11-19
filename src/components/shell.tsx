@@ -1,5 +1,6 @@
 import { ArrowUpRightIcon } from "lucide-react";
 import { NetworkSettings } from "./network-settings";
+import { ProfileButton } from "./profile";
 
 export const SOURCE_URL = "https://github.com/luannzin/sightline";
 
@@ -15,10 +16,11 @@ export function Page({ children }: { children: React.ReactNode }) {
           height={40}
           className="art-edge size-10 rounded-[10px] [image-rendering:pixelated]"
         />
-        <div className="leading-snug">
+        <div className="min-w-0 flex-1 leading-snug">
           <h1 className="font-medium">Sightline</h1>
-          <p className="text-muted-foreground">Show your screen with a link</p>
+          <p className="truncate text-muted-foreground">Show your screen with a link</p>
         </div>
+        <ProfileButton className="-me-3 max-w-[50%]" />
       </header>
       <div className="mt-10 flex flex-1 flex-col">{children}</div>
       <footer className="mt-20 flex items-center justify-between gap-6 text-muted-foreground">

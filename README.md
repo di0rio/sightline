@@ -25,10 +25,21 @@ site is a static page.
    option there.
 3. Copy the link (Sightline copies it for you when the browser allows) and paste it wherever:
    Discord, WhatsApp, an email.
-4. They open it and click **Watch**.
+4. They open it and they're watching. There's nothing to fill in first.
 
-While you share, the page shows who's watching and how each connection is doing (direct or
-through a relay, the bitrate, the round trip). From there you can:
+Everyone gets a made-up name and a pixel critter the first time ("Amber Moth" and a little
+dithered creature), so nobody has to type anything to watch. Click yours (in the corner of the
+page, or on the stage while watching) to change either, any time, even mid-share: everyone sees
+the change at once, and the browser keeps it for next time.
+
+Browsers won't play sound on a page nobody has clicked yet, so the picture starts muted with a
+**Turn on sound** button; any click or key brings the sound in.
+
+While you share, the page tells you when someone comes in and shows who's watching and how each
+connection is doing: the same link meter Deskline draws (dusk dots that reach further and warm up
+the better the link is), and in words, same network, direct or through a relay, the bitrate and
+the round trip. If your connection drops without you stopping, viewers keep the last picture and
+wait up to a minute for you to come back. From there you can:
 
 - Switch **Best for** between **Text** and **Motion**. Text keeps every pixel sharp and lets the
   frame rate drop, for code and documents. Motion keeps 60 frames per second and lets resolution
@@ -113,16 +124,15 @@ capture on HTTPS or localhost).
 ```bash
 bun install
 bun run dev        # http://localhost:5173
-bun run test       # the SDP rewrite, codec choice and links
+bun run test       # the SDP rewrite, codec choice, links, critters, profiles
 bun run build      # dist/
 ```
 
-**GitHub Pages**: push to `main`. `.github/workflows/deploy.yml` lints, tests, builds and publishes.
-The first time, set **Settings → Pages → Source** to **GitHub Actions**.
+**Vercel**: import the repository; it detects Vite (build `bun run build`, output `dist`). Link
+previews take the production address from Vercel on their own.
 
-**Cloudflare Pages, Netlify, anything else**: build command `bun run build`, output `dist`. Set
-`VITE_SITE_URL` to the address it's served at (no trailing slash) so link previews find their
-image; `.env` has the default.
+**Anything else**: build command `bun run build`, output `dist`. Set `VITE_SITE_URL` to the address
+it's served at (no trailing slash) so link previews find their image; `.env` has the default.
 
 `tools/logo.py` draws the pixel-art mark, the icons, the link preview image and the banner
 (`python3 tools/logo.py`, needs Pillow).
@@ -130,8 +140,11 @@ image; `.env` has the default.
 ## How it works
 
 - `src/lib/room.ts`: [Trystero](https://github.com/dmotz/trystero) rooms over Nostr. The host owns
-  the room (Trystero's `roles` plugin makes its key the admin), publishes its name and whether it's
-  live, and can ban. Viewers publish their name.
+  the room (Trystero's `roles` plugin makes its key the admin), publishes its name, critter and
+  whether it's live, and can ban. Viewers publish their name and critter, checked on arrival.
+- `src/lib/profile.ts`, `src/lib/avatar.ts`: the made-up names, and the critters, drawn from one
+  32-bit seed (a mirrored body, eyes, the dusk in a Bayer dither, an outline), so the seed is all
+  that travels and every browser draws the same one.
 - `src/lib/share.ts`: the host's side. One `MediaStream` holds the screen's video, its sound and the
   extra sound source; changing any of them syncs only the difference to everyone watching.
 - `src/lib/peer.ts`: every WebRTC decision, in one `RTCPeerConnection` subclass handed to Trystero.
@@ -141,7 +154,9 @@ image; `.env` has the default.
 - `src/lib/capture.ts`: the picker, with sound processing off so music and games arrive as they
   are, and the focus kept on Sightline instead of jumping to what you shared.
 - `src/lib/link.ts`: the secret and the link.
-- `src/lib/stats.ts`: the numbers, from `getStats()`.
+- `src/lib/stats.ts`: the numbers, from `getStats()`, and the link's quality from its route and
+  round trip (Deskline's measure). `src/components/link.tsx` draws it as Deskline's link meter,
+  and the sweep while connecting.
 - `src/screens/`: the host page and the viewer's stage. The UI is [coss ui](https://coss.com/ui)
   on Tailwind, and the dithered sky behind it comes from luannzin.com's footer.
 

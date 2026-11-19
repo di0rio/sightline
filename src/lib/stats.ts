@@ -7,10 +7,28 @@ export type Stats = {
   kbps: number;
   codec: string;
   rttMs: number | null;
-  relayed: boolean;
+  route: Route;
   /** Sender only: why the encoder is holding back, when it is. */
   limit: string | null;
 };
+
+/** Same network, straight across the internet, or passed along by a TURN relay. */
+export type Route = "lan" | "direct" | "relay";
+
+export const ROUTE_NAMES: Record<Route, string> = {
+  lan: "Same network",
+  direct: "Direct",
+  relay: "Through relay",
+};
+
+/**
+ * How good a link is, 0.15 to 1, from its route and round trip: Deskline's measure, which its
+ * link meter draws.
+ */
+export function linkQuality(route: Route, rttMs: number | null) {
+  const base = { lan: 1, direct: 0.9, relay: 0.6 }[route];
+  return Math.max(0.15, Math.min(1, base - (rttMs ?? 0) / 600));
+}
 
 type Sample = { bytes: number; at: number };
 
@@ -48,7 +66,12 @@ export async function readStats(pc: RTCPeerConnection, last?: Sample) {
       pair?.currentRoundTripTime != null
         ? Math.round(Number(pair.currentRoundTripTime) * 1000)
         : null,
-    relayed: local?.candidateType === "relay" || remote?.candidateType === "relay",
+    route:
+      local?.candidateType === "relay" || remote?.candidateType === "relay"
+        ? "relay"
+        : local?.candidateType === "host" && remote?.candidateType === "host"
+          ? "lan"
+          : "direct",
     limit: limit && limit !== "none" ? limit : null,
   };
   return { stats, sample: { bytes, at: now } satisfies Sample };

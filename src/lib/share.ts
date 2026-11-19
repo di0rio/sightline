@@ -3,12 +3,14 @@
 import { captureScreen, captureSound, hint, newController } from "./capture";
 import { inviteUrl, newSecret } from "./link";
 import { setMode } from "./peer";
+import type { Profile } from "./profile";
 import { enter, type Session } from "./room";
 import type { Mode } from "./tuning";
 
 const META = { kind: "screen" };
 
-export type Watcher = { userId: string; name: string; connections: RTCPeerConnection[] };
+/** `profile` is null until their name and critter arrive. */
+export type Watcher = { userId: string; profile: Profile | null; connections: RTCPeerConnection[] };
 
 export class Share {
   readonly link: string;
@@ -23,7 +25,7 @@ export class Share {
     private session: Session,
     screen: MediaStream,
     link: string,
-    private name: string,
+    private profile: Profile,
     private onChange: () => void,
     private onEnd: () => void,
   ) {
@@ -31,7 +33,7 @@ export class Share {
     this.link = link;
     this.out = new MediaStream(screen.getTracks());
     this.watchEnd();
-    const { room, names } = session;
+    const { room, profiles } = session;
     // newcomers get the stream as they arrive; everyone else already has it
     this.offs.push(
       room.onUserJoin(({ userId }) => {
@@ -39,12 +41,12 @@ export class Share {
         onChange();
       }),
       room.onUserLeave(onChange),
-      names.onChange(onChange),
+      profiles.onChange(onChange),
     );
   }
 
   /** Asks for a screen, then opens the room. Throws if the person cancels the picker. */
-  static async start(name: string, mode: Mode, onChange: () => void, onEnd: () => void) {
+  static async start(profile: Profile, mode: Mode, onChange: () => void, onEnd: () => void) {
     const ctl = newController();
     const screen = await captureScreen(ctl?.controller);
     ctl?.stayHere();
@@ -55,7 +57,7 @@ export class Share {
       const session = await enter(secret);
       const { userId } = await session.room.getSelf();
       const link = inviteUrl({ secret, hostId: userId }, location);
-      const share = new Share(session, screen, link, name, onChange, onEnd);
+      const share = new Share(session, screen, link, profile, onChange, onEnd);
       await share.publish();
       return share;
     } catch (error) {
@@ -69,15 +71,22 @@ export class Share {
   }
 
   watchers(): Watcher[] {
-    const { room, names } = this.session;
+    const { room, profiles } = this.session;
     const peers = Object.values(room.getPeers());
     return Object.keys(room.getUsers()).map((userId) => ({
       userId,
-      name: names.get(userId),
+      profile: profiles.has(userId) ? profiles.get(userId) : null,
       connections: peers.flatMap((p) =>
         p.userId === userId && p.connection ? [p.connection] : [],
       ),
     }));
+  }
+
+  /** A new name or critter, shown to everyone watching right away. */
+  async setProfile(profile: Profile) {
+    if (this.stopped) return;
+    this.profile = profile;
+    await this.session.show.set((s) => ({ ...s, ...profile }));
   }
 
   setMode(mode: Mode) {
@@ -125,7 +134,7 @@ export class Share {
     this.stopped = true;
     for (const off of this.offs) off();
     for (const t of this.out.getTracks()) t.stop();
-    await this.session.show.set({ name: this.name, live: false, sound: false }).catch(() => {});
+    await this.session.show.set({ ...this.profile, live: false, sound: false }).catch(() => {});
     await this.session.room.leave();
   }
 
@@ -133,7 +142,7 @@ export class Share {
   private async publish() {
     await this.session.room.addStream(this.out, { metadata: META });
     await this.session.show.set({
-      name: this.name,
+      ...this.profile,
       live: true,
       sound: this.out.getAudioTracks().length > 0,
     });

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
+import { drawAvatar, SIZE } from "./avatar";
 import { inviteUrl, newSecret, parseInvite, roomName } from "./link";
+import { LINE, NIGHT, WHITE } from "./palette";
+import { cleanName, isProfile, randomName } from "./profile";
+import { linkQuality } from "./stats";
 import { pickCodec, stereoOpus } from "./tuning";
 
 const SDP = [
@@ -64,4 +68,50 @@ test("invite links round-trip and reject anything else", async () => {
   const room = await roomName(secret);
   expect(room).toMatch(/^[0-9a-f]{32}$/);
   expect(room).not.toContain(secret);
+});
+
+test("avatars are the same for a seed, mirrored, and always have a face", () => {
+  const seen = new Set<string>();
+  for (let seed = 0; seed < 500; seed++) {
+    const a = drawAvatar(seed);
+    expect(a).toHaveLength(SIZE * SIZE);
+    expect(drawAvatar(seed)).toEqual(a);
+    seen.add(a.join());
+    // the outline (and the closed eyes and mouth, also in it) mirrors at the centre
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE / 2; x++)
+        expect(a[y * SIZE + x] === LINE).toBe(a[y * SIZE + SIZE - 1 - x] === LINE);
+    // the critter keeps off the edge: the corners are sky
+    expect(a[0]).toBe(NIGHT);
+    expect(a.includes(LINE)).toBe(true);
+  }
+  expect(seen.size).toBeGreaterThan(490);
+  expect(
+    Array.from({ length: 200 }, (_, s) => drawAvatar(s).includes(WHITE)).filter(Boolean).length,
+  ).toBeGreaterThan(150);
+});
+
+test("profiles from other browsers are checked, names cleaned", () => {
+  expect(isProfile({ name: "Amber Moth", avatar: 4294967295 })).toBe(true);
+  for (const bad of [
+    null,
+    "x",
+    { name: "x" },
+    { name: "x".repeat(41), avatar: 1 },
+    { name: "x", avatar: -1 },
+    { name: "x", avatar: 1.5 },
+    { name: "x", avatar: 2 ** 32 },
+    { name: 3, avatar: 1 },
+  ])
+    expect(isProfile(bad)).toBe(false);
+  expect(cleanName("  Luan \n  Z  ")).toBe("Luan Z");
+  expect(cleanName("y".repeat(60))).toHaveLength(40);
+  expect(randomName()).toMatch(/^\w+ \w+$/);
+});
+
+test("link quality: route first, then the round trip, never empty", () => {
+  expect(linkQuality("lan", 0)).toBe(1);
+  expect(linkQuality("direct", null)).toBe(0.9);
+  expect(linkQuality("relay", 60)).toBeCloseTo(0.5);
+  expect(linkQuality("relay", 5000)).toBe(0.15);
 });

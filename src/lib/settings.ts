@@ -2,6 +2,8 @@
 // data), so every read falls back to a default and every write is best effort.
 
 import type { TurnServerConfig } from "trystero";
+import { randomSeed } from "./avatar";
+import { cleanName, isProfile, type Profile, randomName } from "./profile";
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -23,8 +25,16 @@ function write(key: string, value: unknown) {
 export type Turn = { url: string; username: string; credential: string };
 
 export const settings = {
-  name: () => read("name", ""),
-  setName: (name: string) => write("name", name.trim().slice(0, 40)),
+  /** This browser's name and critter, made up the first time and kept from then on. */
+  profile: (): Profile => {
+    const saved = read<unknown>("profile", null);
+    if (isProfile(saved) && saved.name) return saved;
+    // a name typed before profiles existed is kept
+    const fresh = { name: cleanName(read("name", "")) || randomName(), avatar: randomSeed() };
+    write("profile", fresh);
+    return fresh;
+  },
+  setProfile: (profile: Profile) => write("profile", profile),
   volume: () => read("volume", 1),
   setVolume: (volume: number) => write("volume", volume),
   turn: () => read<Turn>("turn", { url: "", username: "", credential: "" }),

@@ -31,9 +31,13 @@ const csp: Plugin = {
   ],
 };
 
+// Link previews need the page's absolute address. On Vercel it's the production domain, read
+// before Vite loads the env files so it takes precedence over `.env`'s default.
+if (process.env.VERCEL_PROJECT_PRODUCTION_URL && !process.env.VITE_SITE_URL)
+  process.env.VITE_SITE_URL = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+
 export default defineConfig({
-  // Relative asset paths, so the same build works at a domain root (Cloudflare Pages) and
-  // under a subpath (GitHub Pages' /sightline/).
+  // Relative asset paths, so the same build works at a domain root and under a subpath.
   base: "./",
   plugins: [react(), tailwindcss(), csp],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
