@@ -105,26 +105,35 @@ export function Host() {
       />
     );
 
+  // The frame is where your screen will show: the one action sits in it, first on the page.
   return (
     <Page>
-      <Dusk className="art-edge aspect-video w-full rounded-[14px]" />
+      <Dusk className="art-edge grid aspect-video w-full place-items-center rounded-[14px] p-4">
+        {canShare ? (
+          <Button
+            size="xl"
+            loading={starting}
+            onClick={() => void start()}
+            className="shadow-black/40 shadow-lg"
+          >
+            <MonitorUpIcon aria-hidden="true" />
+            Share your screen
+          </Button>
+        ) : (
+          <p className="relative max-w-xs rounded-[10px] bg-black/60 px-4 py-3 text-center text-pretty text-white backdrop-blur">
+            Sharing needs a computer. Phones and tablets can still watch a link someone sends.
+          </p>
+        )}
+      </Dusk>
+      {canShare && (
+        <div className="mt-3">
+          <SoundNote support={support} />
+        </div>
+      )}
       <p className="mt-8 text-pretty text-foreground/70 leading-relaxed">
         Share your screen and send the link. Whoever opens it watches in their browser, with the
         video going straight from your computer to theirs. No account, no app, nothing to install.
       </p>
-      {canShare ? (
-        <div className="mt-8 flex flex-col items-start gap-3">
-          <Button size="lg" loading={starting} onClick={() => void start()}>
-            <MonitorUpIcon aria-hidden="true" />
-            Share your screen
-          </Button>
-          <SoundNote support={support} />
-        </div>
-      ) : (
-        <p className="mt-8 text-muted-foreground">
-          Sharing needs a computer. Phones and tablets can still watch a link someone sends.
-        </p>
-      )}
     </Page>
   );
 }
@@ -201,46 +210,52 @@ function Live({
         </figcaption>
       </figure>
 
+      {/* what you do to the share itself sits right under it */}
+      <div className="mt-3 flex flex-wrap justify-end gap-3">
+        <Button
+          variant="outline"
+          onClick={() =>
+            share.changeSource(mode).catch((error: DOMException) => {
+              if (error.name !== "NotAllowedError")
+                toastManager.add({
+                  type: "error",
+                  title: "Unable to change the source",
+                  description: error.message,
+                });
+            })
+          }
+        >
+          <RefreshCwIcon aria-hidden="true" />
+          Change source
+        </Button>
+        <Button variant="destructive-outline" onClick={onStop}>
+          <SquareIcon aria-hidden="true" />
+          Stop sharing
+        </Button>
+      </div>
+
       <div className="mt-8 flex flex-col gap-8">
         <LinkField link={share.link} />
 
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <span id="mode-label" className="font-medium text-sm">
-              Best for
-            </span>
-            <ToggleGroup
-              aria-labelledby="mode-label"
-              variant="outline"
-              value={[mode]}
-              onValueChange={(v) => v[0] && onMode(v[0] as Mode)}
-            >
-              <ToggleGroupItem value="sharp">Text</ToggleGroupItem>
-              <ToggleGroupItem value="smooth">Motion</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={() =>
-                share.changeSource(mode).catch((error: DOMException) => {
-                  if (error.name !== "NotAllowedError")
-                    toastManager.add({
-                      type: "error",
-                      title: "Unable to change the source",
-                      description: error.message,
-                    });
-                })
-              }
-            >
-              <RefreshCwIcon aria-hidden="true" />
-              Change source
-            </Button>
-            <Button variant="destructive-outline" onClick={onStop}>
-              <SquareIcon aria-hidden="true" />
-              Stop sharing
-            </Button>
-          </div>
+        <div className="flex flex-col items-start gap-2">
+          <span id="mode-label" className="font-medium text-sm">
+            Best for
+          </span>
+          <ToggleGroup
+            aria-labelledby="mode-label"
+            aria-describedby="mode-description"
+            variant="outline"
+            value={[mode]}
+            onValueChange={(v) => v[0] && onMode(v[0] as Mode)}
+          >
+            <ToggleGroupItem value="sharp">Text</ToggleGroupItem>
+            <ToggleGroupItem value="smooth">Motion</ToggleGroupItem>
+          </ToggleGroup>
+          <p id="mode-description" className="text-muted-foreground text-sm">
+            {mode === "sharp"
+              ? "Keeps small text and code crisp."
+              : "Keeps video and games smooth."}
+          </p>
         </div>
 
         <Sound share={share} />
@@ -270,7 +285,7 @@ function LinkField({ link }: { link: string }) {
         />
         <Button
           onClick={() => navigator.clipboard.writeText(link).then(() => setCopied(true))}
-          className="w-28"
+          className="min-w-28"
         >
           <span className="relative size-4">
             <CopyIcon
@@ -397,14 +412,14 @@ function Watching({ share, watchers }: { share: Share; watchers: Watcher[] }) {
                   <Avatar seed={w.profile?.avatar ?? 0} />
                   <div className="min-w-0 leading-snug">
                     <p className="truncate">{label}</p>
-                    <p className="flex items-center gap-2 text-muted-foreground text-sm tabular-nums">
+                    <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground text-sm tabular-nums">
                       <LinkMeter stats={s ?? null} />
-                      <span className="truncate">{s ? describe(s) : "Connecting…"}</span>
+                      <span>{s ? describe(s) : "Connecting…"}</span>
                     </p>
                   </div>
                 </div>
                 <Button
-                  variant="ghost"
+                  variant="destructive-outline"
                   size="sm"
                   aria-label={`Remove ${label}`}
                   onClick={() => void share.remove(w.userId)}
@@ -423,7 +438,7 @@ function Watching({ share, watchers }: { share: Share; watchers: Watcher[] }) {
 
 function describe(s: Stats) {
   const parts = [ROUTE_NAMES[s.route], formatRate(s.kbps)];
-  if (s.rttMs !== null) parts.push(`${s.rttMs} ms`);
+  if (s.rttMs !== null) parts.push(`${s.rttMs} ms`);
   if (s.limit === "cpu") parts.push("held back by your CPU");
   if (s.limit === "bandwidth") parts.push("held back by bandwidth");
   return parts.join(" · ");

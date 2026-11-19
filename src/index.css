@@ -178,6 +178,11 @@
   }
 }
 
+/* On the live stage, toasts sit above the player's controls instead of covering them. */
+body:has([data-stage]) [data-slot="toast-viewport"][data-position*="bottom"] {
+  bottom: calc(var(--toast-inset) + 4.5rem);
+}
+
 /* A press dips to 0.96 on a strong ease-out. */
 @utility press {
   transition-property: scale, box-shadow;

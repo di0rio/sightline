@@ -2,6 +2,7 @@ import {
   ActivityIcon,
   MaximizeIcon,
   MinimizeIcon,
+  MonitorUpIcon,
   PictureInPicture2Icon,
   PlayIcon,
   Volume2Icon,
@@ -23,6 +24,7 @@ import type { Invite } from "@/lib/link";
 import { enter, OFF_AIR, type Session, type Show } from "@/lib/room";
 import { settings } from "@/lib/settings";
 import { formatRate, ROUTE_NAMES, readStats, type Stats } from "@/lib/stats";
+import { cn } from "@/lib/utils";
 
 type Phase = "joining" | "live" | "reconnecting" | "ended" | "removed";
 
@@ -161,6 +163,14 @@ export function Viewer({ invite }: { invite: Invite }) {
           <NetworkSettings trigger="Set a relay server" variant="outline" />
         </div>
       )}
+      {!active && (
+        <div className="mt-6">
+          <Button variant="outline" onClick={() => (location.hash = "")}>
+            <MonitorUpIcon aria-hidden="true" />
+            Share your own screen
+          </Button>
+        </div>
+      )}
     </Page>
   );
 }
@@ -182,7 +192,7 @@ function Stage({
   hostId: string;
   reconnecting: boolean;
 }) {
-  const stage = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
   // the browser wouldn't play sound before a click on the page: playing muted until there is one
@@ -312,12 +322,15 @@ function Stage({
   const hasSound = stream.getAudioTracks().length > 0;
 
   return (
-    <div
+    <main
       ref={stage}
       className="relative h-dvh w-full overflow-hidden bg-black data-[asleep]:cursor-none"
       data-asleep={!awake || undefined}
+      data-stage
       onPointerMove={wake}
       onPointerDown={wake}
+      // tabbing into hidden controls brings them back, so focus is never invisible
+      onFocus={wake}
     >
       {/* biome-ignore lint/a11y/useMediaCaption: a live screen has no captions to load */}
       <video
@@ -350,9 +363,10 @@ function Stage({
         </div>
       )}
 
+      {/* top, clear of the toasts and controls at the bottom; any click or key turns it on */}
       {soundLocked && hasSound && !blockedPlay && (
-        <div className="absolute inset-x-0 bottom-24 flex justify-center px-4">
-          <Button size="lg" className="shadow-lg">
+        <div className="pointer-events-none absolute inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+4rem)] flex justify-center px-4">
+          <Button size="lg" className="pointer-events-auto shadow-black/40 shadow-lg">
             <Volume2Icon aria-hidden="true" />
             Turn on sound
           </Button>
@@ -363,21 +377,36 @@ function Stage({
         className="group pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 bg-linear-to-b from-black/70 to-transparent px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-10 text-white transition-opacity duration-300 data-[asleep]:opacity-0"
         data-asleep={!awake || undefined}
       >
-        <p className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
           <Avatar seed={show.avatar} />
-          <span className="truncate font-medium">{title}</span>
-          <span className="shrink-0 text-white/60">{reconnecting ? "Reconnecting" : "Live"}</span>
-          <LinkMeter stats={reconnecting ? null : stats} className="max-sm:hidden" />
-        </p>
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <Audience session={session} hostId={hostId} onEdit={() => setEditing(true)} />
-          {showStats && <StatsPanel stats={stats} />}
+          {/* wraps rather than truncates, so a long name is never cut off */}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="min-w-0 font-medium leading-snug [overflow-wrap:anywhere]">
+              {title}
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-sm backdrop-blur">
+              <span
+                aria-hidden="true"
+                className={cn("size-2 rounded-full", reconnecting ? "bg-warning" : "bg-red-500")}
+              />
+              {reconnecting ? "Reconnecting" : "Live"}
+            </span>
+            <LinkMeter stats={reconnecting ? null : stats} className="max-sm:hidden" />
+          </div>
         </div>
+        <Audience session={session} hostId={hostId} onEdit={() => setEditing(true)} />
       </div>
+
+      {/* asked for with I, so it stays while the rest of the controls sleep */}
+      {showStats && (
+        <div className="pointer-events-none absolute end-4 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] text-white">
+          <StatsPanel stats={stats} />
+        </div>
+      )}
 
       <div
         data-controls
-        className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-3 pt-10 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-white transition-opacity duration-300 data-[asleep]:pointer-events-none data-[asleep]:opacity-0 dark"
+        className="dark absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-3 pt-10 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-white transition-opacity duration-300 data-[asleep]:pointer-events-none data-[asleep]:opacity-0"
         data-asleep={!awake || undefined}
       >
         <Control label={muted ? "Unmute" : "Mute"} shortcut="M" onClick={() => setMuted((m) => !m)}>
@@ -387,9 +416,10 @@ function Stage({
             <Volume2Icon aria-hidden="true" />
           )}
         </Control>
+        {/* phones set volume with their buttons, and iOS ignores it from the page */}
         <Slider
           aria-label="Volume"
-          className="w-28 px-2"
+          className="px-2 pointer-coarse:hidden data-[orientation=horizontal]:w-28"
           min={0}
           max={1}
           step={0.05}
@@ -427,7 +457,7 @@ function Stage({
       </div>
 
       <ProfileDialog open={editing} onOpenChange={setEditing} container={stage.current} />
-    </div>
+    </main>
   );
 }
 
@@ -517,10 +547,10 @@ function Control({
         render={
           <Button
             variant="ghost"
-            size="icon-lg"
+            size="icon-xl"
             aria-label={label}
             onClick={onClick}
-            className="text-white hover:bg-white/10"
+            className="text-white hover:bg-white/10 focus-visible:ring-white"
           />
         }
       >

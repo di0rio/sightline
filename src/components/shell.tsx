@@ -18,9 +18,9 @@ export function Page({ children }: { children: React.ReactNode }) {
         />
         <div className="min-w-0 flex-1 leading-snug">
           <h1 className="font-medium">Sightline</h1>
-          <p className="truncate text-muted-foreground">Show your screen with a link</p>
+          <p className="text-pretty text-muted-foreground">Show your screen with a link</p>
         </div>
-        <ProfileButton className="-me-3 max-w-[50%]" />
+        <ProfileButton className="-me-1 max-w-[50%] sm:-me-3" />
       </header>
       <div className="mt-10 flex flex-1 flex-col">{children}</div>
       <footer className="mt-20 flex items-center justify-between gap-6 text-muted-foreground">

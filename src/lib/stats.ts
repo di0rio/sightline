@@ -78,5 +78,6 @@ export async function readStats(pc: RTCPeerConnection, last?: Sample) {
 }
 
 export function formatRate(kbps: number) {
-  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${kbps} kbps`;
+  // no-break spaces: a number never wraps away from its unit
+  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${kbps} kbps`;
 }

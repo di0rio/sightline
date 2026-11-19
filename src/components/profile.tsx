@@ -182,12 +182,13 @@ export function ProfileButton({ className }: { className?: string }) {
               variant="ghost"
               aria-label={`${profile.name}. Change your name and critter`}
               onClick={() => setOpen(true)}
-              className={cn("h-auto min-w-0 gap-2.5 py-1 ps-1 pe-3 sm:h-auto", className)}
+              className={cn("h-auto min-w-0 gap-2.5 p-1 sm:h-auto sm:pe-3", className)}
             />
           }
         >
           <Avatar seed={profile.avatar} />
-          <span className="truncate">{profile.name}</span>
+          {/* on a phone the critter alone leaves the tagline room; the name stays in the label */}
+          <span className="truncate max-sm:sr-only">{profile.name}</span>
         </TooltipTrigger>
         <TooltipPopup>Change your name and critter</TooltipPopup>
       </Tooltip>
