@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://luannzin.github.io/sightline/"><b>Open Sightline</b></a> ·
+  <a href="https://sightline-self.vercel.app"><b>Open Sightline</b></a> ·
   <a href="#sound">Sound</a> ·
   <a href="#when-it-doesnt-connect">When it doesn't connect</a> ·
   <a href="#run-it-yourself">Run it yourself</a>
