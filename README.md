@@ -18,6 +18,10 @@ goes straight from your browser to theirs, the same way Deskline and PartyLine c
 desktop. There's no server of mine in the middle, because there's no server of mine at all: the
 site is a static page.
 
+<p align="center">
+  <img src="docs/viewer.png" alt="Watching a share in the browser: the sharer's critter and name, Live and the link meter on top, your own critter in the corner, the volume, picture in picture and full screen at the bottom, and the numbers: resolution, frame rate, codec, bitrate and route" width="100%">
+</p>
+
 ## Use it
 
 1. Open Sightline and click **Share your screen**.
@@ -50,6 +54,10 @@ wait up to a minute for you to come back. From there you can:
   browser. A private window gets around it, so for someone who really shouldn't watch, stop and
   share again: the new link is a new room.
 - **Stop sharing**, or use the browser's own stop button. Both end it for everyone.
+
+<p align="center">
+  <img src="docs/sharing.png" alt="Sightline while sharing: the preview with Live and 1 watching, Change source and Stop sharing, the link with Copy link, Best for Text or Motion, Sound, and who's watching with their critter, the link meter, the route, bitrate and round trip" width="440">
+</p>
 
 The person watching gets the screen edge to edge: double-click or **F** for full screen, **M** to
 mute, **I** for the numbers (resolution, frame rate, codec, bitrate, route), and picture in
