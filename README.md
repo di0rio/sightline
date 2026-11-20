@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Sightline" width="100%">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/banner.png">
+    <img src="assets/banner.webp" alt="Sightline: show your screen with a link" width="100%">
+  </picture>
 </p>
 
 <p align="center">
@@ -19,7 +22,12 @@ desktop. There's no server of mine in the middle, because there's no server of m
 site is a static page.
 
 <p align="center">
-  <img src="docs/viewer.png" alt="Watching a share in the browser: the sharer's critter and name, Live and the link meter on top, your own critter in the corner, the volume, picture in picture and full screen at the bottom, and the numbers: resolution, frame rate, codec, bitrate and route" width="100%">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/demo.png">
+    <img src="docs/demo.webp" alt="Sharing on the left, watching on the right. Share your screen turns the page live with a link, a second browser opens the link and connects, and the shared tab plays there under the sharer's name and critter while the first page goes to 1 watching" width="100%">
+  </picture>
+  <br>
+  <sub>sightline.luannzin.com sharing a tab to a second browser, recorded as it ran.</sub>
 </p>
 
 ## Use it
@@ -62,6 +70,10 @@ wait up to a minute for you to come back. From there you can:
 The person watching gets the screen edge to edge: double-click or **F** for full screen, **M** to
 mute, **I** for the numbers (resolution, frame rate, codec, bitrate, route), and picture in
 picture where the browser has it.
+
+<p align="center">
+  <img src="docs/viewer.png" alt="Watching a share in the browser: the sharer's critter and name, Live and the link meter on top, your own critter in the corner, the volume, picture in picture and full screen at the bottom, and the numbers: resolution, frame rate, codec, bitrate and route" width="100%">
+</p>
 
 The link works while your tab is open. Close it and the share is over, and the next share gets a
 new link.

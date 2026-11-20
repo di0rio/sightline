@@ -3,7 +3,8 @@
     python3 tools/logo.py
 
 public/icon.png (512), public/favicon.png (32), public/apple-touch-icon.png (180),
-public/og.png (1200x630, the preview chat apps unfurl) and assets/banner.png (the README header).
+public/og.png (1200x630, the preview chat apps unfurl), assets/banner.webp (the README header, the
+eye looking around) and assets/banner.png (the same banner, still, for reduced motion).
 
 The mark is 32x32 pixel art, Deskline's sibling: an eye with a dark outline, and in its iris the
 dusk from luannzin.com's dither strip (violet, plum, ember, gold) in a 4x4 Bayer ordered dither,
@@ -46,43 +47,52 @@ def dither(ramp, t, x, y):
     return ramp[max(0, min(len(ramp) - 1, round(step)))]
 
 
-def lid(x):
-    """Half the eye's opening at column x (pixel centres), an almond 27 wide."""
+def lid(x, open=1.0):
+    """Half the eye's opening at column x (pixel centres), an almond 27 wide; `open` closes it."""
     u = (x + 0.5 - 16) / 13.6
-    return 0 if abs(u) >= 1 else 9.6 * (1 - u * u) ** 0.85
+    return 0 if abs(u) >= 1 else 9.6 * open * (1 - u * u) ** 0.85
 
 
-def mark():
-    """The 32x32 mark."""
+def mark(look=(0, 0), open=1.0):
+    """The 32x32 mark. `look` moves the iris by whole pixels, `open` (0..1) lowers the lids."""
     img = Image.new("RGBA", (32, 32), CLEAR)
     px = img.load()
     cx, cy = 16, 16
+    ix, iy = cx + look[0], cy + look[1]
 
     def inside(x, y):
-        return abs(y + 0.5 - cy) < lid(x)
+        # a shut eye keeps a two-pixel slit, so the outline still draws it
+        return abs(y + 0.5 - cy) < max(lid(x, open), 0.6 if lid(x) > 1 else 0)
 
+    if open <= 0.05:  # shut: the lids meet in one dark line
+        for y in range(32):
+            for x in range(32):
+                if inside(x, y):
+                    px[x, y] = LINE
+        return img
     # the white of the eye, lit from the upper left, shaded toward the lower right
     for y in range(32):
         for x in range(32):
             if inside(x, y):
-                px[x, y] = WHITE_SHADE if (y - cy) > lid(x) * 0.45 else WHITE
-                if (y - cy) < -lid(x) * 0.55 and x < cx:
+                px[x, y] = WHITE_SHADE if (y - cy) > lid(x, open) * 0.45 else WHITE
+                if (y - cy) < -lid(x, open) * 0.55 and x < cx:
                     px[x, y] = WHITE_LIT
     # the iris: dusk, night at its top, the glow at its bottom, ringed in the outline colour
     r = 7.5
     for y in range(32):
         for x in range(32):
-            d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+            d = math.hypot(x + 0.5 - ix, y + 0.5 - iy)
             if d < r and inside(x, y):
-                t = (y + 0.5 - (cy - r)) / (2 * r)
+                t = (y + 0.5 - (iy - r)) / (2 * r)
                 px[x, y] = LINE if d > r - 1.2 else dither(DUSK, t, x, y)
     # the pupil, and the catchlight that makes it look back at you
     for y in range(32):
         for x in range(32):
-            if math.hypot(x + 0.5 - cx, y + 0.5 - cy) < 2.9:
+            if math.hypot(x + 0.5 - ix, y + 0.5 - iy) < 2.9 and inside(x, y):
                 px[x, y] = NIGHT
     for x, y in ((17, 12), (18, 12), (17, 13), (18, 13), (13, 19)):
-        px[x, y] = WHITE_LIT
+        if inside(x + look[0], y + look[1]):
+            px[x + look[0], y + look[1]] = WHITE_LIT
     # outline: every clear pixel that touches the eye
     edge = [
         (x, y)
@@ -175,6 +185,38 @@ def banner():
     return img
 
 
+# The moving banner: the eye blinks, looks to one side, then the other, and back at you.
+# (look, ms to rest there); None is a blink.
+GLANCES = [((0, 0), 1600), None, ((-3, 0), 900), ((3, 1), 1000), ((0, 0), 500)]
+BLINK = [(0.5, 50), (0.0, 90), (0.5, 50)]
+
+
+def banner_loop():
+    """The banner as frames with durations. The iris moves one art pixel (8 banner pixels) at a
+    time with no easing, the way pixel art would, and rests at each stop."""
+    base = banner()
+    frames = []  # (look, open, ms)
+    at = (0, 0)
+    for g in GLANCES:
+        if g is None:
+            frames += [(at, o, ms) for o, ms in BLINK]
+            continue
+        to, rest = g
+        while at != to:
+            at = (at[0] + (to[0] > at[0]) - (to[0] < at[0]), at[1] + (to[1] > at[1]) - (to[1] < at[1]))
+            frames.append((at, 1.0, 70))
+        frames.append((at, 1.0, rest))
+    # the eye's own square, cleared to the field first: a closing lid uncovers it
+    under = field(1600, 420, (1300, 330), 900).crop((1172, 82, 1428, 338))
+    out = []
+    for look, o, ms in frames:
+        img = base.copy()
+        img.paste(under, (1172, 82))
+        img.alpha_composite(scaled(mark(look, o), 256), (1172, 82))
+        out.append((img, ms))
+    return out
+
+
 def preview():
     """1200x630, what Discord and friends show under a pasted link."""
     img = field(1200, 630, (600, 700), 820)
@@ -201,6 +243,17 @@ def main():
     touch.save(os.path.join(PUBLIC, "apple-touch-icon.png"))
     preview().convert("RGB").save(os.path.join(PUBLIC, "og.png"), optimize=True)
     banner().save(os.path.join(ASSETS, "banner.png"), optimize=True)
+    # The README shows this one; banner.png stays for prefers-reduced-motion.
+    loop = banner_loop()
+    loop[0][0].save(
+        os.path.join(ASSETS, "banner.webp"),
+        save_all=True,
+        append_images=[f for f, _ in loop[1:]],
+        duration=[ms for _, ms in loop],
+        loop=0,
+        lossless=True,
+        method=6,
+    )
     print("wrote", ", ".join(sorted(os.listdir(PUBLIC) + os.listdir(ASSETS))))
 
 
