@@ -72,6 +72,27 @@ test("changing the source keeps a connected viewer's picture and sound", async (
   expect(await playing(viewer)).toEqual({ picture: true, tracks: ["audio", "video"] });
 }, 60_000);
 
+test("a new link cuts off the old one and keeps the capture", async () => {
+  const { host, link } = await startHost();
+  const before = await open(link);
+  await watching(before);
+
+  await host.getByRole("button", { name: "New link" }).click();
+  await before.getByText(/stopped sharing|The share ended/).waitFor({ timeout: 20_000 });
+
+  // the field shows the new link once resetLink has swapped rooms
+  await host.waitForFunction(
+    (old) => document.querySelector<HTMLInputElement>("input[readonly]")?.value !== old,
+    link,
+    { timeout: 20_000 },
+  );
+  const fresh = await host.locator("input[readonly]").inputValue();
+  const after = await open(fresh);
+  await watching(after);
+
+  expect(await playing(after)).toEqual({ picture: true, tracks: ["audio", "video"] });
+}, 60_000);
+
 test("opening a link in the host's tab ends the share", async () => {
   const { host, link } = await startHost();
   const viewer = await open(link);
